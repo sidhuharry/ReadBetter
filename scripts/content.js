@@ -1,48 +1,67 @@
+// ---- Variables and Constants Start ----
 const groupedWordsLength = 3;
-
-const filterEmptyElm = (elms) =>
-  elms.filter((el) => el.innerText && el.innerText !== '');
-
-let ps = filterEmptyElm([...document.querySelectorAll('p')]);
-let divs = filterEmptyElm([...document.querySelectorAll('div')]);
-
 const Status = {
   UNREAD: 'unread',
   READ: 'read',
   ACTIVE: 'active',
 };
+let currentElmIdx = 0;
+let currentParagraph = null;
+let readableElms = [];
+
+// ---- Variables and Constants End -----
+
+const filterUnreadableElms = (elms) => {
+  const isReadable = (el) => {
+    if (el.tagName === 'DIV') {
+      let spans = [...el.querySelectorAll('span')];
+      if (spans.length > 0) {
+        return spans.some((span) => span.innerText && span.innerText !== '');
+      }
+    }
+    return el.innerText && el.innerText !== '';
+  };
+
+  return elms.filter(isReadable);
+};
 
 // TODO: handle a website which is using <br> to create newlines rather than paragraphs or divs
-
-// If there are no ps and add divs to readableElms
-let readableElms = (
-  ps.length === 0
-    ? filterEmptyElm([
-        ...document.querySelectorAll('div', 'li', 'tr', 'pre', 'code'),
-      ])
-    : filterEmptyElm([
-        ...document.querySelectorAll('p', 'li', 'tr', 'pre', 'code'),
-      ])
-).map((elm) => ({
-  elm: elm,
-  status: Status.UNREAD,
-  originalStyle: elm.style,
-}));
-
-function getObjectSizeInBytes(obj) {
+function getObjectSizeInMegabytes(obj) {
   const str = JSON.stringify(obj);
-  return new Blob([str]).size;
+  const sizeInBytes = new Blob([str]).size;
+  return sizeInBytes / (1024 * 1024);
 }
 
-const sizeInBytes = getObjectSizeInBytes(readableElms);
-console.log(`Size of readableElms in memory: ${sizeInBytes} bytes`);
+function updateReadableElms() {
+  readableElms = filterUnreadableElms([
+    ...document.querySelectorAll(
+      'div:last-child:not(:has(div))',
+      'p',
+      'li',
+      'tr',
+      'pre',
+      'code'
+    ),
+  ]).map((elm) => {
+    let totalSize = getObjectSizeInMegabytes({
+      elm: elm,
+      status: Status.UNREAD,
+      originalBgColor: elm.style.backgroundColor,
+      originalTextColor: elm.style.color,
+    });
 
-let currentElmIdx = 0;
+    console.log('This is the total size of the object', totalSize);
+    return {
+      elm: elm,
+      status: Status.UNREAD,
+      originalBgColor: elm.style.backgroundColor,
+      originalTextColor: elm.style.color,
+    };
+  });
 
-let currentParagraph = null;
-
-// Initial paragraph and line highlight
-highlightParagraph(currentElmIdx);
+  const sizeInMbs = getObjectSizeInMegabytes(readableElms);
+  console.log(`Size of readableElms in memory: ${sizeInMbs} MB`);
+}
 
 function markParagraphRead(index) {
   if (readableElms[index]) {
@@ -53,13 +72,14 @@ function markParagraphRead(index) {
 function markParagraphUnread(index) {
   if (readableElms[index]) {
     readableElms[index].status = Status.UNREAD;
-    readableElms[index].elm.style = readableElms[index].originalStyle;
+    readableElms[index].elm.backgroundColor =
+      readableElms[index].backgroundColor;
+    readableElms[index].elm.color = readableElms[index].color;
   }
 }
 
 // Handle keydown for navigating paragraphs and lines
 document.addEventListener('keydown', (event) => {
-  console.log(`event is: ${event.key} -- and shiftKey is: ${event.shiftKey}`);
   if (event.key === 'ArrowDown' && event.shiftKey) {
     // Move to the next paragraph
     if (currentElmIdx < readableElms.length - 1) {
@@ -68,7 +88,6 @@ document.addEventListener('keydown', (event) => {
       highlightParagraph(currentElmIdx);
     }
   }
-
   if (event.key === 'ArrowUp' && event.shiftKey) {
     // Move to the previous paragraph
     if (currentElmIdx > 0) {
@@ -81,14 +100,12 @@ document.addEventListener('keydown', (event) => {
 
 // Function to highlight the selected paragraph
 function highlightParagraph(index) {
-  console.log(`Total Readable Elms: ${JSON.stringify(readableElms)}`);
   if (readableElms[index]) {
     currentParagraph = readableElms[index].elm;
     if (currentParagraph === null) {
       return;
     }
 
-    console.log(currentParagraph);
     currentParagraph.style.padding = '10px';
     currentParagraph.style.borderRadius = '5px';
     currentParagraph.style.backgroundColor = 'lightyellow';
@@ -115,3 +132,35 @@ function highlightParagraph(index) {
     //TODO: highlight the collection of words
   }
 }
+
+function init() {
+  // Create a MutationObserver to watch for changes in the DOM
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      console.log('This is the mutation', mutation);
+      if (
+        ((mutation.type === 'childList' || mutation.type === 'subtree') &&
+          mutation.addedNodes.length > 0) ||
+        mutation.removedNodes.length > 0 ||
+        filterUnreadableElms([...mutation.addedNodes]).length > 0
+      ) {
+        console.log('Updating readable elements');
+        updateReadableElms();
+        console.log('Readable elements updated', readableElms);
+      }
+    });
+  });
+
+  // Start observing the document body for changes
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    // Do not observe attribute changes
+    attributes: false,
+  });
+
+  // Initial paragraph and line highlight
+  highlightParagraph(currentElmIdx);
+}
+
+init();

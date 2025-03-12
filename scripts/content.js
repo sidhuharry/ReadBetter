@@ -1,3 +1,6 @@
+// TODO: handle a website which is using <br> to create newlines rather than paragraphs or divs
+// TODO: Improve the way you are predicting where the useful content is
+//FIXME: Going back up on the page, removing highlight from the paragraph is not working
 // ---- Variables and Constants Start ----
 const groupedWordsLength = 3;
 const Status = {
@@ -12,6 +15,14 @@ let readableElms = [];
 // ---- Variables and Constants End -----
 
 const filterUnreadableElms = (elms) => {
+  const isInViewport = (el) => {
+    const rect = el.getBoundingClientRect();
+    const windowWidth =
+      window.innerWidth || document.documentElement.clientWidth;
+    const horInView =
+      rect.left <= windowWidth * 0.6 && rect.right >= windowWidth * 0.4;
+    return horInView;
+  };
   const isReadable = (el) => {
     if (el.tagName === 'DIV') {
       let spans = [...el.querySelectorAll('span')];
@@ -21,11 +32,9 @@ const filterUnreadableElms = (elms) => {
     }
     return el.innerText && el.innerText !== '';
   };
-
-  return elms.filter(isReadable);
+  return elms.filter(isInViewport).filter(isReadable);
 };
 
-// TODO: handle a website which is using <br> to create newlines rather than paragraphs or divs
 function getObjectSizeInMegabytes(obj) {
   const str = JSON.stringify(obj);
   const sizeInBytes = new Blob([str]).size;
@@ -34,31 +43,36 @@ function getObjectSizeInMegabytes(obj) {
 
 function updateReadableElms() {
   readableElms = filterUnreadableElms([
-    ...document.querySelectorAll(
-      'div:last-child:not(:has(div))',
-      'p',
-      'li',
-      'tr',
-      'pre',
-      'code'
-    ),
-  ]).map((elm) => {
-    let totalSize = getObjectSizeInMegabytes({
-      elm: elm,
-      status: Status.UNREAD,
-      originalBgColor: elm.style.backgroundColor,
-      originalTextColor: elm.style.color,
+    ...document.querySelectorAll('div:last-child:not(:has(div)'),
+    ...document.querySelectorAll('p'),
+    ...document.querySelectorAll('li:not(p li)'), // select only li which are without the p tag
+    ...document.querySelectorAll('tr'),
+    ...document.querySelectorAll('pre:not(:has(div, p, li, tr))'),
+    ...document.querySelectorAll('code:not(:has(div, p, li, tr))'),
+  ])
+    .map((elm) => {
+      let bgColor = elm.getAttribute('read-better-original-bg');
+      if (!bgColor) {
+        elm.setAttribute('read-better-original-bg', elm.style.backgroundColor);
+        bgColor = elm.style.backgroundColor;
+      }
+      let color = elm.getAttribute('read-better-original-color');
+      if (!color) {
+        elm.setAttribute('read-better-original-color', elm.style.color);
+        color = elm.style.color;
+      }
+      return {
+        elm: elm,
+        status: Status.UNREAD,
+        bgColor: bgColor,
+        color: color,
+      };
+    })
+    .sort((a, b) => {
+      const rectA = a.elm.getBoundingClientRect();
+      const rectB = b.elm.getBoundingClientRect();
+      return rectA.top - rectB.top;
     });
-
-    console.log('This is the total size of the object', totalSize);
-    return {
-      elm: elm,
-      status: Status.UNREAD,
-      originalBgColor: elm.style.backgroundColor,
-      originalTextColor: elm.style.color,
-    };
-  });
-
   const sizeInMbs = getObjectSizeInMegabytes(readableElms);
   console.log(`Size of readableElms in memory: ${sizeInMbs} MB`);
 }
@@ -72,31 +86,22 @@ function markParagraphRead(index) {
 function markParagraphUnread(index) {
   if (readableElms[index]) {
     readableElms[index].status = Status.UNREAD;
-    readableElms[index].elm.backgroundColor =
-      readableElms[index].backgroundColor;
-    readableElms[index].elm.color = readableElms[index].color;
+    readableElms[index].elm.style.backgroundColor = readableElms[index].bgColor;
+    readableElms[index].elm.style.color = readableElms[index].color;
+
+    // Ensure paragraph is in view with 300px margin
+    readableElms[index].elm.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest',
+    });
+
+    const rect = readableElms[index].elm.getBoundingClientRect();
+    if (rect.bottom > window.innerHeight - 300) {
+      window.scrollBy(0, rect.bottom - window.innerHeight + 300);
+    }
   }
 }
-
-// Handle keydown for navigating paragraphs and lines
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowDown' && event.shiftKey) {
-    // Move to the next paragraph
-    if (currentElmIdx < readableElms.length - 1) {
-      markParagraphRead(currentElmIdx);
-      currentElmIdx++;
-      highlightParagraph(currentElmIdx);
-    }
-  }
-  if (event.key === 'ArrowUp' && event.shiftKey) {
-    // Move to the previous paragraph
-    if (currentElmIdx > 0) {
-      markParagraphUnread(currentElmIdx);
-      currentElmIdx--;
-      highlightParagraph(currentElmIdx);
-    }
-  }
-});
 
 // Function to highlight the selected paragraph
 function highlightParagraph(index) {
@@ -144,7 +149,6 @@ function init() {
         mutation.removedNodes.length > 0 ||
         filterUnreadableElms([...mutation.addedNodes]).length > 0
       ) {
-        console.log('Updating readable elements');
         updateReadableElms();
         console.log('Readable elements updated', readableElms);
       }
@@ -161,6 +165,25 @@ function init() {
 
   // Initial paragraph and line highlight
   highlightParagraph(currentElmIdx);
+
+  // Handle keydown for navigating paragraphs and lines
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' && event.shiftKey) {
+      // Move to the next paragraph
+      if (currentElmIdx < readableElms.length - 1) {
+        markParagraphRead(currentElmIdx);
+        currentElmIdx++;
+        highlightParagraph(currentElmIdx);
+      }
+    }
+    if (event.key === 'ArrowUp' && event.shiftKey) {
+      // Move to the previous paragraph
+      if (currentElmIdx > 0) {
+        markParagraphUnread(currentElmIdx);
+        currentElmIdx--;
+      }
+    }
+  });
 }
 
 init();

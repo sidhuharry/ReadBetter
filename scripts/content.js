@@ -1,6 +1,5 @@
 // TODO: handle a website which is using <br> to create newlines rather than paragraphs or divs
 // TODO: Improve the way you are predicting where the useful content is
-//FIXME: Going back up on the page, removing highlight from the paragraph is not working
 // ---- Variables and Constants Start ----
 const groupedWordsLength = 3;
 const Status = {
@@ -27,7 +26,13 @@ const filterUnreadableElms = (elms) => {
     if (el.tagName === 'DIV') {
       let spans = [...el.querySelectorAll('span')];
       if (spans.length > 0) {
-        return spans.some((span) => span.innerText && span.innerText !== '');
+        return spans.some((span) => {
+          let rbGeneratedSpan = span.getAttribute('read-better-generated');
+          if (rbGeneratedSpan) {
+            return false;
+          }
+          return span.innerText && span.innerText !== '';
+        });
       }
     }
     return el.innerText && el.innerText !== '';
@@ -35,21 +40,33 @@ const filterUnreadableElms = (elms) => {
   return elms.filter(isInViewport).filter(isReadable);
 };
 
-function getObjectSizeInMegabytes(obj) {
+function getObjectSizeInMbs(obj) {
   const str = JSON.stringify(obj);
   const sizeInBytes = new Blob([str]).size;
   return sizeInBytes / (1024 * 1024);
 }
 
 function updateReadableElms() {
-  readableElms = filterUnreadableElms([
-    ...document.querySelectorAll('div:last-child:not(:has(div)'),
-    ...document.querySelectorAll('p'),
+  let tempReadableElms = filterUnreadableElms([
+    ...document.querySelectorAll('div:last-child:not(:has(*))'),
+    //TODO: On chatgpt.com, they are using p tag inside form to for the input field. This causes an infinite loop in mutation observer. p:not(form p) is to fix that. Find a better way to fix this.
+    ...document.querySelectorAll('p:not(form p)'),
     ...document.querySelectorAll('li:not(p li)'), // select only li which are without the p tag
+    ...document.querySelectorAll('li:not(:has(p))'), // select only li which do not have p in it.
     ...document.querySelectorAll('tr'),
     ...document.querySelectorAll('pre:not(:has(div, p, li, tr))'),
     ...document.querySelectorAll('code:not(:has(div, p, li, tr))'),
   ])
+    .filter((elm) => {
+      // Check status attribute. If it's already set then the element is already in the readableElms array
+      let processed = elm.getAttribute('read-better-processed');
+      if (!processed) {
+        elm.setAttribute('read-better-processed', true);
+        return true;
+      }
+      // This element is already in the readableElms array
+      return false;
+    })
     .map((elm) => {
       let bgColor = elm.getAttribute('read-better-original-bg');
       if (!bgColor) {
@@ -73,8 +90,10 @@ function updateReadableElms() {
       const rectB = b.elm.getBoundingClientRect();
       return rectA.top - rectB.top;
     });
-  const sizeInMbs = getObjectSizeInMegabytes(readableElms);
+  const sizeInMbs = getObjectSizeInMbs(readableElms);
   console.log(`Size of readableElms in memory: ${sizeInMbs} MB`);
+  // merge readableElms and tempReadableElms
+  readableElms = [...readableElms, ...tempReadableElms];
 }
 
 function markParagraphRead(index) {
@@ -101,6 +120,21 @@ function markParagraphUnread(index) {
       window.scrollBy(0, rect.bottom - window.innerHeight + 300);
     }
   }
+}
+
+// Highlights words based on natural language reading style
+//TODO: Improve this highlighting function with a word processing algo which groups text inside tags like <> {} () "" '' etc.
+function highlightWords(paragraph) {
+  const regex = /([.,;:"\-—?])/g;
+  let sentences = paragraph.innerText.split(regex).filter(Boolean);
+  paragraph.innerHTML = '';
+  sentences.forEach((part) => {
+    let span = document.createElement('span');
+    span.innerText = part;
+    span.style.backgroundColor = 'red';
+    span.setAttribute('read-better-generated', true);
+    paragraph.appendChild(span);
+  });
 }
 
 // Function to highlight the selected paragraph
@@ -135,6 +169,7 @@ function highlightParagraph(index) {
       window.scrollBy(0, rect.bottom - window.innerHeight + 300);
     }
     //TODO: highlight the collection of words
+    highlightWords(currentParagraph);
   }
 }
 
@@ -142,13 +177,13 @@ function init() {
   // Create a MutationObserver to watch for changes in the DOM
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
-      console.log('This is the mutation', mutation);
       if (
         ((mutation.type === 'childList' || mutation.type === 'subtree') &&
           mutation.addedNodes.length > 0) ||
         mutation.removedNodes.length > 0 ||
         filterUnreadableElms([...mutation.addedNodes]).length > 0
       ) {
+        //FIXME: Instead of updating the whole array, update only the newly added nodes
         updateReadableElms();
         console.log('Readable elements updated', readableElms);
       }

@@ -174,14 +174,16 @@ function highlightParagraph(index) {
 }
 
 function init() {
-  // Create a MutationObserver to watch for changes in the DOM
+  console.log('Init...');
+  // Read static content on the page
+  updateReadableElms();
+  // Create a MutationObserver to watch for changes in the DOM for dynamically rendered elements
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (
         ((mutation.type === 'childList' || mutation.type === 'subtree') &&
           mutation.addedNodes.length > 0) ||
-        mutation.removedNodes.length > 0 ||
-        filterUnreadableElms([...mutation.addedNodes]).length > 0
+        mutation.removedNodes.length > 0
       ) {
         //FIXME: Instead of updating the whole array, update only the newly added nodes
         updateReadableElms();
@@ -221,4 +223,5 @@ function init() {
   });
 }
 
+// Since I am using the default document state, this is the first method to be called on 'document_idle'
 init();

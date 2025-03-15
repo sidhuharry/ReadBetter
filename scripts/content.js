@@ -48,14 +48,10 @@ function getObjectSizeInMbs(obj) {
 
 function updateReadableElms() {
   let tempReadableElms = filterUnreadableElms([
-    ...document.querySelectorAll('div:last-child:not(:has(*))'),
     //TODO: On chatgpt.com, they are using p tag inside form to for the input field. This causes an infinite loop in mutation observer. p:not(form p) is to fix that. Find a better way to fix this.
-    ...document.querySelectorAll('p:not(form p)'),
-    ...document.querySelectorAll('li:not(p li)'), // select only li which are without the p tag
-    ...document.querySelectorAll('li:not(:has(p))'), // select only li which do not have p in it.
-    ...document.querySelectorAll('tr'),
-    ...document.querySelectorAll('pre:not(:has(div, p, li, tr))'),
-    ...document.querySelectorAll('code:not(:has(div, p, li, tr))'),
+    ...document.querySelectorAll(
+      'div:last-child:not(:has(*)),p:not(form p),li:not(p li),li:not(:has(p)),tr,pre:not(:has(div, p, li, tr)),code:not(:has(div, p, li, tr)'
+    ),
   ])
     .filter((elm) => {
       // Check status attribute. If it's already set then the element is already in the readableElms array

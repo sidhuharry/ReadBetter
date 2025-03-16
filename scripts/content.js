@@ -1,7 +1,9 @@
-// TODO: handle a website which is using <br> to create newlines rather than paragraphs or divs
 // TODO: Improve the way you are predicting where the useful content is
+
 // ---- Variables and Constants Start ----
 const groupedWordsLength = 3;
+
+//FIXM: This is not needed, I think. Revisit it,
 const Status = {
   UNREAD: 'unread',
   READ: 'read',
@@ -10,6 +12,10 @@ const Status = {
 let currentElmIdx = 0;
 let currentParagraph = null;
 let readableElms = [];
+
+let currentSentenceIdx = 0;
+let currentSentence = null;
+let sentenceList = [];
 
 // ---- Variables and Constants End -----
 
@@ -27,8 +33,8 @@ const filterUnreadableElms = (elms) => {
       let spans = [...el.querySelectorAll('span')];
       if (spans.length > 0) {
         return spans.some((span) => {
-          let rbGeneratedSpan = span.getAttribute('read-better-generated');
-          if (rbGeneratedSpan) {
+          let rbGeneratedAttr = span.getAttribute('read-better-generated');
+          if (rbGeneratedAttr) {
             return false;
           }
           return span.innerText && span.innerText !== '';
@@ -118,25 +124,54 @@ function markParagraphUnread(index) {
   }
 }
 
+function updateSentenceList() {
+  if (currentParagraph === null) {
+    return;
+  }
+  const regex = />([^<]+)</g;
+  let newInnerHTML = currentParagraph.innerHTML.replace(
+    regex,
+    (match, text) => {
+      let splitText = text
+        .split(/([;:,\.\?\-])/)
+        .filter((s) => s.trim() !== '');
+      console.log('Split text', splitText);
+      let wrappedText = splitText
+        .map((t) => `<span read-better-generated=true>${t.trim()}</span>`)
+        .join(' ');
+      console.log('Wrapped text', wrappedText);
+      return `>${wrappedText}<`;
+    }
+  );
+  currentParagraph.innerHTML = newInnerHTML;
+  console.log('Current paragraph after wrapping', currentParagraph.innerHTML);
+  sentenceList = [
+    ...currentParagraph.querySelectorAll('span[read-better-generated]'),
+  ];
+  console.log('This is the sentence list', sentenceList);
+}
+
 // Highlights words based on natural language reading style
 //TODO: Improve this highlighting function with a word processing algo which groups text inside tags like <> {} () "" '' etc.
-function highlightWords(paragraph) {
-  const regex = /([.,;:"\-—?])/g;
-  let sentences = paragraph.innerText.split(regex).filter(Boolean);
-  paragraph.innerHTML = '';
-  sentences.forEach((part) => {
-    let span = document.createElement('span');
-    span.innerText = part;
-    span.style.backgroundColor = 'red';
-    span.setAttribute('read-better-generated', true);
-    paragraph.appendChild(span);
-  });
+function highlightSentence() {
+  //FIXME: Save the original css of the elements and restore when the sentence is unhighlighted
+  if (currentParagraph === null || sentenceList.length === 0) {
+    return;
+  }
+  // while adding spans to existing paragraph, maintain the original style of the paragraph
+  currentParagraph.innerHTML = '';
+  let aSentence = sentenceList[currentSentenceIdx];
+  let span = document.createElement('span');
+  span.innerText = aSentence;
+  span.style.backgroundColor = 'red';
+  span.setAttribute('read-better-generated', true);
+  currentParagraph.appendChild(span);
 }
 
 // Function to highlight the selected paragraph
-function highlightParagraph(index) {
-  if (readableElms[index]) {
-    currentParagraph = readableElms[index].elm;
+function highlightParagraph() {
+  if (readableElms[currentElmIdx]) {
+    currentParagraph = readableElms[currentElmIdx].elm;
     if (currentParagraph === null) {
       return;
     }
@@ -164,16 +199,69 @@ function highlightParagraph(index) {
     if (rect.bottom > window.innerHeight - 300) {
       window.scrollBy(0, rect.bottom - window.innerHeight + 300);
     }
-    //TODO: highlight the collection of words
-    highlightWords(currentParagraph);
   }
 }
 
-function init() {
-  console.log('Init...');
-  // Read static content on the page
+function resetSentenceHighlightOnParagraphMovement() {
+  updateSentenceList();
+  currentSentenceIdx = 0;
+  highlightSentence();
+}
+
+function moveToNextSentence() {
+  if (currentSentenceIdx < sentenceList.length - 1) {
+    currentSentenceIdx++;
+    highlightSentence();
+  } else {
+    // Move to the next paragraph
+    highlightNextParagraph();
+  }
+}
+
+function moveToPreviousSentence() {
+  if (currentSentenceIdx > 0) {
+    currentSentenceIdx--;
+    highlightSentence();
+  } else {
+    // Move to the previous paragraph
+    highlightPreviousParagraph();
+  }
+}
+
+function highlightNextParagraph() {
+  markParagraphRead(currentElmIdx);
+  if (currentElmIdx < readableElms.length - 1) {
+    currentElmIdx++;
+  } else {
+    // reset to zero and go back to the top of the page
+    currentElmIdx = 0;
+  }
+  highlightParagraph();
+  resetSentenceHighlightOnParagraphMovement();
+}
+
+function highlightPreviousParagraph() {
+  if (currentElmIdx > 0) {
+    markParagraphUnread(currentElmIdx);
+    currentElmIdx--;
+    resetSentenceHighlightOnParagraphMovement();
+  }
+  //TODO handle else case. show some animation to the user that they have reached the top of the page
+}
+
+function initParagraphHighlight() {
   updateReadableElms();
+  currentElmIdx = 0;
+  highlightParagraph();
+  resetSentenceHighlightOnParagraphMovement();
+}
+
+function init() {
+  // Initial paragraph and line highlight
+  initParagraphHighlight();
+
   // Create a MutationObserver to watch for changes in the DOM for dynamically rendered elements
+  //TODO Improve this observer. This is causing slowness on some websites
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (
@@ -183,7 +271,7 @@ function init() {
       ) {
         //FIXME: Instead of updating the whole array, update only the newly added nodes
         updateReadableElms();
-        console.log('Readable elements updated', readableElms);
+        console.log('Readable elements updated', readableElms.length);
       }
     });
   });
@@ -196,25 +284,25 @@ function init() {
     attributes: false,
   });
 
-  // Initial paragraph and line highlight
-  highlightParagraph(currentElmIdx);
-
   // Handle keydown for navigating paragraphs and lines
   document.addEventListener('keydown', (event) => {
     if (event.key === 'ArrowDown' && event.shiftKey) {
       // Move to the next paragraph
-      if (currentElmIdx < readableElms.length - 1) {
-        markParagraphRead(currentElmIdx);
-        currentElmIdx++;
-        highlightParagraph(currentElmIdx);
-      }
+      highlightNextParagraph();
     }
     if (event.key === 'ArrowUp' && event.shiftKey) {
-      // Move to the previous paragraph
-      if (currentElmIdx > 0) {
-        markParagraphUnread(currentElmIdx);
-        currentElmIdx--;
-      }
+      // Move to the previous paragraph\
+      highlightPreviousParagraph();
+    }
+
+    // on right arrow key press move to the next sentence
+    if (event.key === 'ArrowRight') {
+      moveToNextSentence();
+    }
+
+    // on left arrow key press move to the previous sentence
+    if (event.key === 'ArrowLeft') {
+      moveToPreviousSentence();
     }
   });
 }

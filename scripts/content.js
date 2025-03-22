@@ -125,30 +125,40 @@ function markParagraphUnread(index) {
 }
 
 function updateSentenceList() {
-  if (currentParagraph === null) {
-    return;
-  }
-  const regex = />([^<]+)</g;
-  let newInnerHTML = currentParagraph.innerHTML.replace(
-    regex,
-    (match, text) => {
-      let splitText = text
-        .split(/([;:,\.\?\-])/)
-        .filter((s) => s.trim() !== '');
-      console.log('Split text', splitText);
-      let wrappedText = splitText
-        .map((t) => `<span read-better-generated=true>${t.trim()}</span>`)
-        .join(' ');
-      console.log('Wrapped text', wrappedText);
-      return `>${wrappedText}<`;
+  try {
+    if (currentParagraph === null) {
+      return;
     }
-  );
-  currentParagraph.innerHTML = newInnerHTML;
-  console.log('Current paragraph after wrapping', currentParagraph.innerHTML);
-  sentenceList = [
-    ...currentParagraph.querySelectorAll('span[read-better-generated]'),
-  ];
-  console.log('This is the sentence list', sentenceList);
+    const regex = />([^<]+)</g;
+    console.log('Current paragraph', currentParagraph);
+
+    console.log(
+      'Current paragraph before wrapping',
+      JSON.stringify(currentParagraph.innerHTML)
+    );
+    let newInnerHTML = currentParagraph.innerHTML.replace(
+      regex,
+      (match, text) => {
+        let splitText = text
+          .split(/([;:,\.\?\-])/)
+          .filter((_splittedTxt) => _splittedTxt.trim() !== '');
+        console.log('Split text', splitText);
+        let wrappedText = splitText
+          .map((_text) => `<span read-better-generated="true">${_text}</span>`) // Fixed closing tag
+          .join(' ');
+        console.log('Wrapped text', wrappedText);
+        return `>${wrappedText}<`;
+      }
+    );
+    currentParagraph.innerHTML = newInnerHTML;
+    console.log('Current paragraph after wrapping', currentParagraph.innerHTML);
+    sentenceList = [
+      ...currentParagraph.querySelectorAll('span[read-better-generated]'),
+    ];
+    console.log('This is the sentence list', sentenceList);
+  } catch (e) {
+    console.error('Error in updateSentenceList', e);
+  }
 }
 
 // Highlights words based on natural language reading style
@@ -161,11 +171,7 @@ function highlightSentence() {
   // while adding spans to existing paragraph, maintain the original style of the paragraph
   currentParagraph.innerHTML = '';
   let aSentence = sentenceList[currentSentenceIdx];
-  let span = document.createElement('span');
-  span.innerText = aSentence;
-  span.style.backgroundColor = 'red';
-  span.setAttribute('read-better-generated', true);
-  currentParagraph.appendChild(span);
+  aSentence.style.backgroundColor = 'red';
 }
 
 // Function to highlight the selected paragraph

@@ -13,9 +13,9 @@ let currentElmIdx = 0;
 let currentParagraph = null;
 let readableElms = [];
 
-let currentSentenceIdx = 0;
-let currentSentence = null;
-let sentenceList = [];
+let currentReadablePartIdx = 0;
+let currentReadablePart = null;
+let readablePartsInParagraph = [];
 
 // ---- Variables and Constants End -----
 
@@ -52,6 +52,29 @@ function getObjectSizeInMbs(obj) {
   return sizeInBytes / (1024 * 1024);
 }
 
+function readableParts(elm) {
+  // Split inner html of elements into lines based on ,.?! and then wrap them in span
+  const regex = />([^<]+)</g;
+  let lines = [];
+  console.log('This is the element', elm);
+  let innerHTML = elm.innerHTML;
+  if (innerHTML === null || innerHTML === '') {
+    return [];
+  }
+  let newInnerHTML = innerHTML.replace(regex, (match, text) => {
+    console.log('This is the match', match);
+    console.log('This is the text', text);
+    const splitText = input.match(/[^.\-,;?]+[.\-,;?]?/g);
+    let wrappedText = splitText
+      .map((_text) => `<span read-better-generated="true">${_text}</span>`)
+      .join(' ');
+    return `>${wrappedText}<`;
+  });
+  elm.innerHTML = newInnerHTML;
+  console.log('Now, the inner html of the element is ', elm.innnerHTML);
+  return [...elm.querySelectorAll('span[read-better-generated]')];
+}
+
 function updateReadableElms() {
   let tempReadableElms = filterUnreadableElms([
     //TODO: On chatgpt.com, they are using p tag inside form to for the input field. This causes an infinite loop in mutation observer. p:not(form p) is to fix that. Find a better way to fix this.
@@ -82,11 +105,13 @@ function updateReadableElms() {
       }
       return {
         elm: elm,
+        readableParts: readableParts(elm),
         status: Status.UNREAD,
         bgColor: bgColor,
         color: color,
       };
     })
+    .filter((elm) => elm.readableParts.length > 0)
     .sort((a, b) => {
       const rectA = a.elm.getBoundingClientRect();
       const rectB = b.elm.getBoundingClientRect();
@@ -124,60 +149,26 @@ function markParagraphUnread(index) {
   }
 }
 
-function updateSentenceList() {
-  try {
-    if (currentParagraph === null) {
-      return;
-    }
-    const regex = />([^<]+)</g;
-    console.log('Current paragraph', currentParagraph);
-
-    console.log(
-      'Current paragraph before wrapping',
-      JSON.stringify(currentParagraph.innerHTML)
-    );
-    let newInnerHTML = currentParagraph.innerHTML.replace(
-      regex,
-      (match, text) => {
-        let splitText = text
-          .split(/([;:,\.\?\-])/)
-          .filter((_splittedTxt) => _splittedTxt.trim() !== '');
-        console.log('Split text', splitText);
-        let wrappedText = splitText
-          .map((_text) => `<span read-better-generated="true">${_text}</span>`) // Fixed closing tag
-          .join(' ');
-        console.log('Wrapped text', wrappedText);
-        return `>${wrappedText}<`;
-      }
-    );
-    currentParagraph.innerHTML = newInnerHTML;
-    console.log('Current paragraph after wrapping', currentParagraph.innerHTML);
-    sentenceList = [
-      ...currentParagraph.querySelectorAll('span[read-better-generated]'),
-    ];
-    console.log('This is the sentence list', sentenceList);
-  } catch (e) {
-    console.error('Error in updateSentenceList', e);
-  }
-}
-
 // Highlights words based on natural language reading style
 //TODO: Improve this highlighting function with a word processing algo which groups text inside tags like <> {} () "" '' etc.
-function highlightSentence() {
+function highlightReadablePart() {
   //FIXME: Save the original css of the elements and restore when the sentence is unhighlighted
-  if (currentParagraph === null || sentenceList.length === 0) {
+  if (
+    currentParagraph === null ||
+    readablePartsInParagraph.length === 0 ||
+    currentReadablePart === null
+  ) {
     return;
   }
-  // while adding spans to existing paragraph, maintain the original style of the paragraph
-  currentParagraph.innerHTML = '';
-  let aSentence = sentenceList[currentSentenceIdx];
-  aSentence.style.backgroundColor = 'red';
+  currentReadablePart = readablePartsInParagraph[currentReadablePartIdx];
+  currentReadablePart.style.backgroundColor = 'red';
 }
 
 // Function to highlight the selected paragraph
 function highlightParagraph() {
   if (readableElms[currentElmIdx]) {
     currentParagraph = readableElms[currentElmIdx].elm;
+
     if (currentParagraph === null) {
       return;
     }
@@ -208,26 +199,26 @@ function highlightParagraph() {
   }
 }
 
-function resetSentenceHighlightOnParagraphMovement() {
-  updateSentenceList();
-  currentSentenceIdx = 0;
-  highlightSentence();
+function resetReadablePartHighlightOnParagraphMovement() {
+  currentReadablePartIdx = 0;
+  readablePartsInParagraph = readableElms[currentElmIdx].readableParts;
+  highlightReadablePart();
 }
 
-function moveToNextSentence() {
-  if (currentSentenceIdx < sentenceList.length - 1) {
-    currentSentenceIdx++;
-    highlightSentence();
+function moveToNextReadablePart() {
+  if (currentReadablePartIdx < readablePartsInParagraph.length - 1) {
+    currentReadablePartIdx++;
+    highlightReadablePart();
   } else {
     // Move to the next paragraph
     highlightNextParagraph();
   }
 }
 
-function moveToPreviousSentence() {
-  if (currentSentenceIdx > 0) {
-    currentSentenceIdx--;
-    highlightSentence();
+function moveToPreviousReadablePart() {
+  if (currentReadablePartIdx > 0) {
+    currentReadablePartIdx--;
+    highlightReadablePart();
   } else {
     // Move to the previous paragraph
     highlightPreviousParagraph();
@@ -243,14 +234,14 @@ function highlightNextParagraph() {
     currentElmIdx = 0;
   }
   highlightParagraph();
-  resetSentenceHighlightOnParagraphMovement();
+  resetReadablePartHighlightOnParagraphMovement();
 }
 
 function highlightPreviousParagraph() {
   if (currentElmIdx > 0) {
     markParagraphUnread(currentElmIdx);
     currentElmIdx--;
-    resetSentenceHighlightOnParagraphMovement();
+    resetReadablePartHighlightOnParagraphMovement();
   }
   //TODO handle else case. show some animation to the user that they have reached the top of the page
 }
@@ -259,7 +250,7 @@ function initParagraphHighlight() {
   updateReadableElms();
   currentElmIdx = 0;
   highlightParagraph();
-  resetSentenceHighlightOnParagraphMovement();
+  resetReadablePartHighlightOnParagraphMovement();
 }
 
 function init() {
@@ -303,12 +294,12 @@ function init() {
 
     // on right arrow key press move to the next sentence
     if (event.key === 'ArrowRight') {
-      moveToNextSentence();
+      moveToNextReadablePart();
     }
 
     // on left arrow key press move to the previous sentence
     if (event.key === 'ArrowLeft') {
-      moveToPreviousSentence();
+      moveToPreviousReadablePart();
     }
   });
 }
